@@ -35,7 +35,7 @@ langgraph==0.6.11
 langgraph-checkpoint-sqlite==2.0.11
 langserve==0.3.3
 langfuse==4.13.0
-langchain-google-genai==4.2.6
+langchain-google-genai==2.0.8  # pinned below latest (like langchain-core) since 2.1.x+ needs google-ai-generativelanguage>=0.7, which conflicts with google-generativeai==0.8.6's hard pin of 0.6.15; 3.0.0+ needs langchain-core>=1.0
 
 # MCP
 mcp==1.28.1

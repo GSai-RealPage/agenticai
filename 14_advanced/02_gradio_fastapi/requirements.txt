@@ -1,0 +1,5 @@
+# Extra dependency for this demo, on top of the root requirements.txt
+# (fastapi, uvicorn, openai, pydantic, python-dotenv, requests are already
+# covered there; gradio was intentionally removed from the root file, so
+# it's scoped locally here instead of reintroducing it repo-wide).
+gradio==6.20.0
