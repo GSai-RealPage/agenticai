@@ -5,7 +5,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import os
 
-PDF_PATH = os.path.join(os.path.dirname(__file__), "..", "rag", "darwin.pdf")
+PDF_PATH = os.path.join(os.path.dirname(__file__), "..", "rag", "Principles-of-Data-Science.pdf")
 
 # 1. Load the PDF - one Document per page
 loader = PyPDFLoader(PDF_PATH)

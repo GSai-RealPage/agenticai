@@ -23,6 +23,8 @@ phidata==2.7.10
 langchain==0.3.30
 langchain-core==0.3.86
 langchain-community==0.3.31
+beautifulsoup4==4.15.0  # required by WebBaseLoader (14_advanced/05_langchain/document_loaders.py)
+langchain-experimental==0.3.4  # for SemanticChunker; 0.4.x+ forces langchain-core>=1.0, breaking the pre-1.0 pin above
 langchain-openai==0.3.35
 langchain-huggingface==0.3.1
 langchain-text-splitters==0.3.11
@@ -49,6 +51,7 @@ pinecone==9.1.0
 sentence-transformers==5.6.0
 llama-index==0.14.23
 llama-index-vector-stores-chroma==0.5.5
+umap-learn==0.5.12
 
 # Data / ML / explainability
 scikit-learn==1.9.0

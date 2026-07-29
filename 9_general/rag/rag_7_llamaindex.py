@@ -6,7 +6,14 @@
 # -------------------------------
 # 2. Imports
 # -------------------------------
+import sys
 import os
+
+# PDF text extraction can produce stray characters outside Windows' default
+# console codepage (cp1252) - reconfigure stdout to UTF-8 so printing
+# retrieved chunks doesn't crash on them.
+sys.stdout.reconfigure(encoding="utf-8")
+
 from llama_index.core import (
     VectorStoreIndex,
     SimpleDirectoryReader,
@@ -28,7 +35,7 @@ Settings.llm = OpenAI(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PDF_PATH = os.path.join(BASE_DIR, "darwin.pdf")
+PDF_PATH = os.path.join(BASE_DIR, "Principles-of-Data-Science.pdf")
 STORAGE_DIR = os.path.join(BASE_DIR, "llamaindex_storage")
 
 # -------------------------------
@@ -68,7 +75,7 @@ query_engine = index.as_query_engine(similarity_top_k=3)
 # 5. Query Examples
 # -------------------------------
 def ask(question: str) -> None:
-    # Per query: (1) question is embedded, (2) similar chunks from the Darwin book
+    # Per query: (1) question is embedded, (2) similar chunks from the textbook
     # are retrieved, (3) the LLM receives those chunks plus the question, and
     # (4) it synthesizes a final answer grounded in the book.
     response = query_engine.query(question)
@@ -84,4 +91,4 @@ def ask(question: str) -> None:
         print(f"  [{i}] score={node.score:.3f}  \"{preview}...\"")
 
 ask("Summarize the main ideas of the book.")
-ask("What examples of natural selection are mentioned?")
+ask("What is a p-value?")
