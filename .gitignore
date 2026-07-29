@@ -22,6 +22,7 @@ ENV/
 *.sqlite3
 **/*chroma*/
 **/*faiss*/
+**/llamaindex_storage/
 2_openai_agents/data/
 
 # Large data files exceeding GitHub's size limit
