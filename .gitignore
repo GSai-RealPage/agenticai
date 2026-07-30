@@ -23,6 +23,7 @@ ENV/
 **/*chroma*/
 **/*faiss*/
 **/llamaindex_storage/
+**/.langgraph_api/
 2_openai_agents/data/
 
 # Large data files exceeding GitHub's size limit
