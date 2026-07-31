@@ -45,6 +45,7 @@ langchain-google-genai==2.0.8  # pinned below latest (like langchain-core) since
 # MCP
 mcp==1.28.1
 fastmcp==3.4.4
+mcp-server-sqlite==2025.4.25  # official reference SQLite MCP server, used by 6_mcp/6_13
 
 # Vector stores / retrieval / embeddings
 chromadb==1.1.1  # crewai hard-pins json-repair==0.25.2 which forces chromadb~=1.1.0; don't bump without checking crewai

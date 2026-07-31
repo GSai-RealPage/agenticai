@@ -24,6 +24,7 @@ ENV/
 **/*faiss*/
 **/llamaindex_storage/
 **/.langgraph_api/
+**/.playwright-mcp/
 2_openai_agents/data/
 
 # Large data files exceeding GitHub's size limit
