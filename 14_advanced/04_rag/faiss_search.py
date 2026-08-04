@@ -45,6 +45,7 @@ embeddings = model.encode(
 dimension = embeddings.shape[1]
 
 index = faiss.IndexFlatL2(dimension)
+# Other options: IndexFlatIP, IndexHNSW32, IndexHNSW64
 
 index.add(embeddings)
 

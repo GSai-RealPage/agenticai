@@ -4,6 +4,7 @@ requests==2.34.2
 
 # LLM provider SDKs
 openai==2.44.0
+tiktoken==0.9.0  # OpenAI tokenizer, used by 14_advanced/03_llm_examples/tiktoken_tokenization_example.py
 ollama==0.6.2
 google-generativeai==0.8.6
 cohere==7.0.5
