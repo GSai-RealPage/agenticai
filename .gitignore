@@ -27,6 +27,12 @@ ENV/
 **/.playwright-mcp/
 2_openai_agents/data/
 
+# 15_real demo run output (recreated by the scripts themselves on first run)
+15_real/agent_memory/
+15_real/langchain_memory_db/
+15_real/logs/
+15_real/research_reports/
+
 # Large data files exceeding GitHub's size limit
 3_langgraph/amazon_products.csv
 
