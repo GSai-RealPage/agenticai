@@ -9,7 +9,9 @@ response = client.chat.completions.create(
     model="qwen3:8b",
     messages=[
         {"role": "user",
-         "content": "Explain Artificial Intelligence."}
+         "content": "Explain Artificial Intelligence.",
+        },
+        
     ]
 )
 
