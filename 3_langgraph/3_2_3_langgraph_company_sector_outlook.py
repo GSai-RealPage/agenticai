@@ -119,11 +119,14 @@ workflow.add_node("risk_watch_note", risk_watch_note)
 
 workflow.set_entry_point("fetch_company_data")
 
+# After fetch_company_data finishes, 
+# check whether it succeeded or failed. 
+# If it failed, go to fetch_failed. If it succeeded, go to summarize_outlook
 workflow.add_conditional_edges(
-    "fetch_company_data",
-    lambda state: "fetch_failed"
-    if state["company_data"].startswith("Error fetching data")
-    else "summarize_outlook"
+    "fetch_company_data", # current node
+    lambda state: "fetch_failed" # go to this node if the following condition is true
+    if state["company_data"].startswith("Error fetching data") # if company data was not returned
+    else "summarize_outlook" # if fetch was successful
 )
 
 workflow.add_edge("summarize_outlook", "analyze_outlook")
