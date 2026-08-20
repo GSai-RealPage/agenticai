@@ -49,6 +49,11 @@ graph.add_edge("generate_response", END)
 
 # The checkpointer is what makes messages behave as SHORT-TERM (thread-scoped)
 # memory - a new thread_id starts with an empty message list no matter what.
+
+# After each "invoke" call, the checkpointer writes the 
+# resulting full message list to its in-process dictionary.
+# This is keyed by thread_id, and is re-initialized for each new thread_id.
+# We do not have to worry about this in a multi-threaded context.
 app = graph.compile(checkpointer=MemorySaver())
 
 
