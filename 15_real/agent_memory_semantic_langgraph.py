@@ -5,7 +5,8 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 import os
 import sys
-import json
+import uuid
+import chromadb
 from typing import Annotated, TypedDict
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -23,15 +24,16 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 # =====================================================================
 # LONG-TERM SEMANTIC memory - durable FACTS about the user (name,
 # policy number, preferences, constraints), stored per user_id in a
-# JSON file and loaded fresh at the start of every session, regardless
-# of thread_id. Unlike short-term memory (see
+# ChromaDB collection and retrieved by SEMANTIC SIMILARITY to the
+# CURRENT message - real semantic search, not just "load everything
+# for this user_id". Unlike short-term memory (see
 # agent_memory_short_term_langgraph.py), this survives a brand-new
 # conversation thread.
 #
 # The proof this isn't a dummy example: the demo below runs a SECOND,
 # brand-new thread_id (a new session) and shows the agent already
 # knowing a fact it was only told in the FIRST thread - that only
-# works if the JSON store is real and actually being read.
+# works if the vector store is real and actually being queried.
 #
 # Scenario: an insurance claims assistant that should remember a
 # policyholder's policy number across separate visits.
@@ -39,20 +41,25 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 MEMORY_DIR = os.path.join(os.path.dirname(__file__), "agent_memory")
 os.makedirs(MEMORY_DIR, exist_ok=True)
-SEMANTIC_PATH = os.path.join(MEMORY_DIR, "semantic_memory.json")
+
+semantic_collection = chromadb.PersistentClient(
+    path=os.path.join(MEMORY_DIR, "semantic_db")
+).get_or_create_collection("semantic_facts")
 
 
-def load_semantic_facts(user_id: str) -> list[str]:
-    store = json.load(open(SEMANTIC_PATH, encoding="utf-8")) if os.path.exists(SEMANTIC_PATH) else {}
-    return store.get(user_id, [])
+def load_semantic_facts(user_id: str, current_message: str, top_k: int = 3) -> list[str]:
+    if semantic_collection.count() == 0:
+        return []
+    results = semantic_collection.query(query_texts=[current_message], n_results=top_k, where={"user_id": user_id})
+    return results["documents"][0] if results["documents"] else []
 
 
 def save_semantic_facts(user_id: str, new_facts: list[str]):
-    store = json.load(open(SEMANTIC_PATH, encoding="utf-8")) if os.path.exists(SEMANTIC_PATH) else {}
-    existing = store.get(user_id, [])
-    store[user_id] = existing + [f for f in new_facts if f not in existing]
-    with open(SEMANTIC_PATH, "w", encoding="utf-8") as f:
-        json.dump(store, f, indent=2)
+    semantic_collection.add(
+        ids=[str(uuid.uuid4()) for _ in new_facts],
+        documents=new_facts,
+        metadatas=[{"user_id": user_id}] * len(new_facts),
+    )
 
 
 # ---------------------------------------------------------------------
@@ -74,7 +81,8 @@ class AgentState(TypedDict):
 
 
 def load_long_term_memory(state: AgentState) -> AgentState:
-    semantic_facts = load_semantic_facts(state["user_id"])
+    last_message = state["messages"][-1].content
+    semantic_facts = load_semantic_facts(state["user_id"], last_message)
     print(f"  [loaded semantic facts] {semantic_facts or 'none'}")
     return {"semantic_facts": semantic_facts}
 
