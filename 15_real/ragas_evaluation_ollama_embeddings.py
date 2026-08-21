@@ -6,10 +6,12 @@ import os
 import sys
 import csv
 import random
+import time
 import chromadb
 from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
 from openai import OpenAI, AsyncOpenAI
 import ollama
+from ollama import ResponseError
 from ragas.llms import llm_factory
 from ragas.embeddings.base import BaseRagasEmbedding
 from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextRecall, ContextPrecisionWithoutReference
@@ -38,6 +40,33 @@ openai_client = OpenAI()
 ragas_llm = llm_factory(model=MODEL, provider="openai", client=AsyncOpenAI())
 
 
+def _embed_with_retry(embed_call):
+    """Ollama's server proxies each embed request to a per-model runner
+    subprocess, and occasionally does so before that subprocess has
+    finished starting - a transient server-side race that surfaces as a
+    connection-refused error on an internal port, not a bad request.
+    Retry a couple of times before giving up."""
+    for attempt in range(3):
+        try:
+            return embed_call()
+        except ResponseError:
+            if attempt == 2:
+                raise
+            time.sleep(2)
+    raise AssertionError("unreachable")
+
+
+async def _aembed_with_retry(embed_call):
+    for attempt in range(3):
+        try:
+            return await embed_call()
+        except ResponseError:
+            if attempt == 2:
+                raise
+            time.sleep(2)
+    raise AssertionError("unreachable")
+
+
 class OllamaRagasEmbedding(BaseRagasEmbedding):
     """ragas.metrics.collections (the modern metrics API used below) requires a
     BaseRagasEmbedding, and ragas ships no built-in Ollama provider - so call
@@ -56,10 +85,11 @@ class OllamaRagasEmbedding(BaseRagasEmbedding):
         self._sync_client = ollama.Client()
 
     def embed_text(self, text: str, **kwargs) -> list[float]:
-        return list(self._sync_client.embed(model=self._model, input=text).embeddings[0])
+        response = _embed_with_retry(lambda: self._sync_client.embed(model=self._model, input=text))
+        return list(response.embeddings[0])
 
     async def aembed_text(self, text: str, **kwargs) -> list[float]:
-        response = await ollama.AsyncClient().embed(model=self._model, input=text)
+        response = await _aembed_with_retry(lambda: ollama.AsyncClient().embed(model=self._model, input=text))
         return list(response.embeddings[0])
 
 
@@ -73,13 +103,22 @@ context_precision = ContextPrecisionWithoutReference(llm=ragas_llm)
 
 # ---- Minimal RAG pipeline, built directly on the FAQ database ----
 
+
+class RetryingOllamaEmbeddingFunction(OllamaEmbeddingFunction):
+    """See _embed_with_retry above - chromadb's Ollama embedding function
+    hits the same transient runner-startup race, so retry it too."""
+
+    def __call__(self, input):
+        return _embed_with_retry(lambda: super(RetryingOllamaEmbeddingFunction, self).__call__(input))
+
+
 with open(CSV_PATH, newline="", encoding="utf-8") as f:
     FAQ_ROWS = list(csv.DictReader(f))
 
 FAQ_INDEX = chromadb.Client().create_collection(
     "support_faq",
     metadata={"hnsw:space": "cosine"},
-    embedding_function=OllamaEmbeddingFunction(model_name="nomic-embed-text"),
+    embedding_function=RetryingOllamaEmbeddingFunction(model_name="nomic-embed-text"),
 )
 FAQ_INDEX.add(
     ids=[row["id"] for row in FAQ_ROWS],
