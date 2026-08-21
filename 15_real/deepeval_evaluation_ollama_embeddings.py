@@ -1,10 +1,15 @@
 # pip install deepeval openai chromadb python-dotenv
+# Requires a local Ollama server with the embedding model pulled:
+#   ollama pull nomic-embed-text
 
 import os
 import sys
 import csv
 import random
+import time
 import chromadb
+from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
+from ollama import ResponseError
 from openai import OpenAI
 from deepeval.test_case import LLMTestCase
 from deepeval.metrics import (
@@ -21,36 +26,18 @@ load_dotenv(override=True)
 sys.stdout.reconfigure(encoding="utf-8")
 
 # =====================================================================
-# DeepEval evaluation of a small retrieve()/generate() RAG pipeline
-# built directly on top of the FAQ database (customer_support_qa_500.csv)
-# - not on top of an already-built agent - on the same real, database-
-# sourced test cases as 15_real/ragas_evaluation.py (see that file for
-# the full rationale: real FAQ ground truth + paraphrased questions,
-# not hand-invented test cases).
+# Ollama embeddings variant of deepeval_evaluation.py: the FAQ retrieval
+# index embeds text locally via a running Ollama server (nomic-embed-text)
+# instead of downloading a HuggingFace sentence-transformers model.
 #
-# This file exists to contrast frameworks, not pipelines: RAGAS scores
-# metrics itself via its own `.score()` calls; DeepEval instead hands
-# an LLMTestCase to each metric's `.measure()` and reads `.score`/
-# `.reason` back - one added benefit being a human-readable reason
-# string per metric, not just a number.
+# Unlike the RAGAS AnswerRelevancy metric, none of DeepEval's metrics
+# here take an embeddings argument - they're all LLM-judge based (each
+# metric just gets `model=MODEL`), so there's no second embeddings
+# object to swap. Only the retrieval index changes.
 #
-# Same four RAG-quality metrics, same meaning as the RAGAS example:
-#   Faithfulness             - does the answer only claim things that
-#                               are actually IN the retrieved FAQs, or
-#                               did the model add/invent something?
-#   Answer Relevancy         - does the answer actually address what
-#                               was asked (vs. a vague non-answer)?
-#   Contextual Recall        - did retrieval find what the REAL FAQ
-#                               answer needed? (expected_output = the
-#                               database's own answer)
-#   Contextual Precision     - of what was retrieved, how much was
-#                               actually useful for the answer given?
-#
-# Plus two content-safety metrics with no RAGAS equivalent in this
-# comparison - they score the generation itself, not its groundedness:
-#   Toxicity                 - does the answer contain toxic language?
-#   Bias                     - does the answer show gender/racial/
-#                               political/etc. bias?
+# Toxicity and Bias are content-safety metrics with no RAGAS equivalent
+# in the ragas_evaluation*.py comparison - they score the generation
+# itself, not its groundedness in the retrieved FAQs.
 # =====================================================================
 
 CSV_PATH = os.path.join(os.path.dirname(__file__), "customer_support_qa_500.csv")
@@ -69,10 +56,33 @@ bias = BiasMetric(model=MODEL)
 
 # ---- Minimal RAG pipeline, built directly on the FAQ database ----
 
+
+class RetryingOllamaEmbeddingFunction(OllamaEmbeddingFunction):
+    """Ollama's server proxies each embed request to a per-model runner
+    subprocess, and occasionally does so before that subprocess has
+    finished starting - a transient server-side race that surfaces as a
+    connection-refused error on an internal port, not a bad request.
+    Retry a couple of times before giving up."""
+
+    def __call__(self, input):
+        for attempt in range(3):
+            try:
+                return super().__call__(input)
+            except ResponseError:
+                if attempt == 2:
+                    raise
+                time.sleep(2)
+        raise AssertionError("unreachable")
+
+
 with open(CSV_PATH, newline="", encoding="utf-8") as f:
     FAQ_ROWS = list(csv.DictReader(f))
 
-FAQ_INDEX = chromadb.Client().create_collection("support_faq", metadata={"hnsw:space": "cosine"})
+FAQ_INDEX = chromadb.Client().create_collection(
+    "support_faq",
+    metadata={"hnsw:space": "cosine"},
+    embedding_function=RetryingOllamaEmbeddingFunction(model_name="nomic-embed-text"),
+)
 FAQ_INDEX.add(
     ids=[row["id"] for row in FAQ_ROWS],
     documents=[row["question"] for row in FAQ_ROWS],
