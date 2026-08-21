@@ -1,13 +1,17 @@
-# pip install ragas openai chromadb sentence-transformers python-dotenv
+# pip install ragas openai chromadb ollama python-dotenv
+# Requires a local Ollama server with the embedding model pulled:
+#   ollama pull nomic-embed-text
 
 import os
 import sys
 import csv
 import random
 import chromadb
+from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
 from openai import OpenAI, AsyncOpenAI
+import ollama
 from ragas.llms import llm_factory
-from ragas.embeddings import HuggingFaceEmbeddings as RagasHuggingFaceEmbeddings
+from ragas.embeddings.base import BaseRagasEmbedding
 from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextRecall, ContextPrecisionWithoutReference
 from dotenv import load_dotenv
 
@@ -15,29 +19,12 @@ load_dotenv(override=True)
 sys.stdout.reconfigure(encoding="utf-8")
 
 # =====================================================================
-# RAGAS evaluation of a small retrieve()/generate() RAG pipeline built
-# directly on top of the FAQ database (customer_support_qa_500.csv) -
-# not on top of an already-built agent, and not against hand-invented
-# test questions.
-#
-# Each test case: take one real (question, answer) pair per category
-# from the CSV, use the real answer as the reference, but naturally
-# PARAPHRASE the question before asking it - a real user won't type
-# the FAQ's exact wording, and testing with the verbatim FAQ question
-# would make retrieval trivially easy and prove nothing about the
-# pipeline's real-world robustness to phrasing.
-#
-# Four core RAGAS metrics, each answering a different question:
-#   Faithfulness             - does the answer only claim things that
-#                               are actually IN the retrieved FAQs, or
-#                               did the model add/invent something?
-#   Answer Relevancy         - does the answer actually address what
-#                               was asked (vs. a vague non-answer)?
-#   Context Recall           - did retrieval find what the REAL FAQ
-#                               answer needed? (ground truth = the
-#                               database's own answer)
-#   Context Precision        - of what was retrieved, how much was
-#                               actually useful for the answer given?
+# Ollama embeddings variant of ragas_evaluation.py: both the retrieval
+# index and the RAGAS answer-relevancy metric embed text locally via a
+# running Ollama server (nomic-embed-text) instead of downloading a
+# HuggingFace sentence-transformers model. Everything else - the RAG
+# pipeline built directly on the FAQ database, the paraphrase-then-ask
+# test cases, the four RAGAS metrics - is unchanged from that file.
 # =====================================================================
 
 CSV_PATH = os.path.join(os.path.dirname(__file__), "customer_support_qa_500.csv")
@@ -49,7 +36,34 @@ openai_client = OpenAI()
 # ragas's score() calls the LLM's async methods internally, even for "sync" usage - it
 # needs an AsyncOpenAI client.
 ragas_llm = llm_factory(model=MODEL, provider="openai", client=AsyncOpenAI())
-ragas_embeddings = RagasHuggingFaceEmbeddings(model="sentence-transformers/all-MiniLM-L6-v2")
+
+
+class OllamaRagasEmbedding(BaseRagasEmbedding):
+    """ragas.metrics.collections (the modern metrics API used below) requires a
+    BaseRagasEmbedding, and ragas ships no built-in Ollama provider - so call
+    the Ollama embed endpoint directly.
+
+    aembed_text creates a fresh ollama.AsyncClient() per call rather than
+    reusing one: each score() call wraps its work in its own asyncio.run(),
+    and an async client's connection pool stays bound to the event loop it
+    was first used on - reusing it across score() calls fails with
+    "Event loop is closed" once that first loop ends.
+    """
+
+    def __init__(self, model: str = "nomic-embed-text"):
+        super().__init__()
+        self._model = model
+        self._sync_client = ollama.Client()
+
+    def embed_text(self, text: str, **kwargs) -> list[float]:
+        return list(self._sync_client.embed(model=self._model, input=text).embeddings[0])
+
+    async def aembed_text(self, text: str, **kwargs) -> list[float]:
+        response = await ollama.AsyncClient().embed(model=self._model, input=text)
+        return list(response.embeddings[0])
+
+
+ragas_embeddings = OllamaRagasEmbedding(model="nomic-embed-text")
 
 faithfulness = Faithfulness(llm=ragas_llm)
 answer_relevancy = AnswerRelevancy(llm=ragas_llm, embeddings=ragas_embeddings)
@@ -62,7 +76,11 @@ context_precision = ContextPrecisionWithoutReference(llm=ragas_llm)
 with open(CSV_PATH, newline="", encoding="utf-8") as f:
     FAQ_ROWS = list(csv.DictReader(f))
 
-FAQ_INDEX = chromadb.Client().create_collection("support_faq", metadata={"hnsw:space": "cosine"})
+FAQ_INDEX = chromadb.Client().create_collection(
+    "support_faq",
+    metadata={"hnsw:space": "cosine"},
+    embedding_function=OllamaEmbeddingFunction(model_name="nomic-embed-text"),
+)
 FAQ_INDEX.add(
     ids=[row["id"] for row in FAQ_ROWS],
     documents=[row["question"] for row in FAQ_ROWS],
